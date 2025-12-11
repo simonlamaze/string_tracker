@@ -1,0 +1,270 @@
+import cv2
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from pathlib import Path
+from scipy import stats 
+
+#the score function for the gradient descent
+def model(t,E, A,w,p,l):
+    return E + A * np.exp(-l*t) * np.cos(w*t + p)
+
+def truncate( list,threshold):
+    """
+    Truncate list values  until the first one reachingt the threshold. This was supposed to stop the list when the wave stopped, but it doesn't work before averaging. Maybe the opposite will work better ?
+    """
+    n = len(list)
+    a=0
+    while list[a]>threshold and a<n-1:
+        a+=1
+    return list[:a+1]
+def average(list):
+    a=0
+    for i in range (len(list)):
+        a+= list[i]
+    return a/len(list)
+def average_convert (list,N ,S):
+    """
+    Filters the velocity to get rid of noise, with N the number of points to average over( 5< N <20 overall). Also converts it in m/s, with S the size of a  in m
+    Returns a list of the same size , of course N<< len(list)
+    """
+    
+    n = len(list)
+    b=0
+    flat_list=[]
+    for i in range(n):
+        if 0<=i<N:
+            flat_list.append(average(list[:i+N])*S)
+        elif N<=i<n-N:
+          
+            flat_list.append(average(list[i-N:i+N+1])*S)
+        elif n-N<=i<n:
+            
+            flat_list.append(average(list[i-N:])*S)
+
+
+    
+    return flat_list
+class WaveTrackingAnalyzer:
+    """
+    Analyze and visualize wave tracking data from JSON output.
+    """
+    
+    def __init__(self, json_path):
+        """
+        Load tracking data from JSON file.
+        """
+        with open(json_path, 'r') as f:
+            self.data = json.load(f)
+        
+        self.video_path = self.data['video_path']
+        self.fps = self.data['fps']
+        self.origin = self.data['origin']
+        self.wave_front = self.data['wave_front']
+        self.tracked_string= self.data['tracked_string']
+        print(f"Loaded {len(self.wave_front)} tracking points")
+        print(f"loaded {len(self.tracked_string)} points for the tracked string")
+        print(f"Origin: ({self.origin['x']}, {self.origin['y']})")
+        print(f"FPS: {self.fps}")
+    
+    def generate_plots(self, output_dir="outputs"):
+        """
+        Generate analysis plots:
+        1. Wave front propagation (distance vs time)
+        2. Wave front velocity (instantaneous and mean)
+        """
+        Path(output_dir).mkdir(exist_ok=True)
+        
+        # extract tracking data
+        frames = [p['frame'] for p in self.wave_front]
+        times = [p['time']/4000 for p in self.wave_front]
+        x_positions = [p['x'] for p in self.wave_front]
+        y_positions = [p['y'] for p in self.wave_front]
+        distances = [p['distance from origin'] for p in self.wave_front]
+        
+        #extract string tracket data
+        frames_string = [p['frame'] for p in self.tracked_string]
+        times_string = [p['time']/4000 for p in self.tracked_string]
+        x_positions_string = [p['x'] for p in self.tracked_string]
+        y_positions_string = [p['y'] for p in self.tracked_string]
+        distances_string = [p['distance from origin'] for p in self.tracked_string]
+        # calculate instantaneous velocities 
+        velocities_px_per_s = []
+        times_velocity = []
+        
+        for i in range(1, len(self.wave_front)):
+            dt_seconds = times[i] - times[i-1]
+            dd = distances[i] - distances[i-1]
+            
+            if dt_seconds > 0:
+                v_px_s = dd / dt_seconds
+                velocities_px_per_s.append(v_px_s)
+                
+            times_velocity.append(times[i])
+        
+        # style
+        import seaborn as sns
+        sns.set_style("whitegrid")
+        sns.set_context("paper", font_scale=1.3)
+    
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        
+        
+        
+        # tracked string
+        ax2 = axes[1]
+        
+        center= distances_string[0]
+        print(len(times_string[1:]))
+        
+        distances_string=distances_string[1:]
+        times_string=times_string[1:] # the first point is just the center, not the first real point
+        print(len(distances_string))
+        for i in range(len(distances_string)):
+            distances_string[i]= distances_string[i]-center
+        #on centre les positions autour de 0 pour mieux voir les oscillations
+        # on ramène l'origine des temps à 0:
+        min_time= min(times_string)
+        for i in range(len(times_string)):
+            times_string[i]= times_string[i]-min_time
+        popt, pcov = curve_fit(model, times_string, distances_string, p0=[0, -5, -35000, 0, 0.01], maxfev=100000)
+        E_opt,A_opt, w_opt, p_opt, l_opt = popt
+        p_opt= p_opt%(2*np.pi)
+        A2   = f"{A_opt:.2g}"
+        w2   = f"{w_opt:.2g}"
+        p2 = f"{p_opt:.2g}"
+        l2   = f"{l_opt:.2g}"
+        E2   = f"{E_opt:.2g}"
+        print(f"Fitted parameters: A={A2}, w={w2}, p={p2}, l={l2}, E={E2}")
+        fitted_distances = model(np.array(times_string), *popt)
+        ax2.plot(times_string, fitted_distances, '-', color='blue', linewidth=1.5, markersize=0, label = "fit" )
+        
+        ax2.plot(times_string, distances_string, '-', color='#ff7f0e', linewidth=1.5, markersize=0, label = "tracked string" )
+        ax2.set_xlabel('Time [s]', fontsize=14)
+        ax2.set_ylabel('Position from center (pixels)', fontsize=14)
+        ax2.legend()
+        """
+        #that's the instantaneous velocity plot, very noisy
+        correct_list=average_convert(velocities_px_per_s,50,0.0002)
+        
+
+        # we determined when the wave stopped by first averaging to get rid of the noise, and now we reaverage on the relevant measurements
+        # If I had taken truncated list, I would have taken average measures containing irrelevant values
+        if len(velocities_px_per_s) > 0:
+            ax2.plot(times_velocity,correct_list, '-', color='#2ca02c', linewidth=1.5, alpha=0.7)
+            
+        ax2.set_xlabel('Time [s]', fontsize=11)
+        ax2.set_ylabel('Velocity [m/s]', fontsize=11)
+        ax2.set_title('Wave front velocity', fontsize=12, fontweight='bold', pad=10)
+        ax2.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        ax2.set_ylim(20,30) # règle l'échelle pour une meilleure visualisation
+        ax2.spines['top'].set_visible(False)
+        ax2.spines['right'].set_visible(False)
+        ax2.legend(frameon=False, fontsize=10)
+        """
+        """
+        
+        # 1. distance vs time (wave front propagation)
+        """
+        slope, intercept, r_value, p_value, std_err = stats.linregress(times, distances)
+        L=[]
+        for i in range(len(times)):
+            L.append(intercept+slope*times[i])
+        ax1 = axes[0]
+        ax1.plot(times,L, '-', color='blue', linewidth=1.5, markersize=0, label = "mean: "+str(slope*0.0002)[:5]+"m/s" )
+        
+        ax1.plot(times, distances, '-', color='#d62728', linewidth=1.5, markersize=0)
+        ax1.set_xlabel('Time [s]', fontsize=11)
+        ax1.set_ylabel('Distance from origin (pixels)', fontsize=11)
+        ax1.set_title('Wave front propagation', fontsize=12, fontweight='bold', pad=10)
+        ax1.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        ax1.spines['top'].set_visible(False)
+        ax1.spines['right'].set_visible(False)
+        ax1.legend()
+        plt.tight_layout()
+
+        
+        
+        plot_path = f"{output_dir}/wave_analysis.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight', facecolor='white')
+        plt.close()
+        
+        
+        sns.reset_orig()
+        return
+               
+    
+    def create_annotated_video(self, output_path="outputs/wave_tracking_video.mp4"):
+        """
+        Create annotated video showing:
+        - Blue circle: origin point (wave source)
+        - Red circle + vertical line: tracked wave front position
+        """
+        Path(output_path).parent.mkdir(exist_ok=True)
+        
+        cap = cv2.VideoCapture(self.video_path)
+        
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        # initialize video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, self.fps, (width, height))
+        
+        # create frame-to-point for more efficient access
+        frame_to_point = {p['frame']: p for p in self.wave_front}
+
+        # origin coordinates
+        ox = int(self.origin['x'])
+        oy = int(self.origin['y'])
+                
+        frame_idx = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            annotated = frame.copy()
+
+            # draw origin point
+            cv2.circle(annotated, (ox, oy), 3, (255, 0, 0), -1)
+            
+            # draw wave front if tracked up to this frame
+            relevant_points = [p for p in self.wave_front if p['frame'] <= frame_idx]
+            
+            if len(relevant_points) > 0:
+                
+                current_point = relevant_points[-1]
+                wx = int(current_point['x'])
+                wy = int(current_point['y'])            
+                
+                cv2.line(annotated, (wx, 0), (wx, height), (0, 0, 255), 1, cv2.LINE_AA)
+            
+            out.write(annotated)
+            
+            frame_idx += 1
+            
+        
+        cap.release()
+        out.release()
+        
+    
+
+def main():
+    json_path = "results/wave_tracking.json"
+    
+    analyzer = WaveTrackingAnalyzer(json_path)
+    
+    # generate quantitative analysis plots
+    analyzer.generate_plots(output_dir="outputs")
+
+   
+    
+
+if __name__ == "__main__":
+    main()
+
+
+
