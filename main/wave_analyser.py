@@ -1,12 +1,26 @@
+from turtle import pd
 import cv2
+from matplotlib import markers
+from matplotlib.lines import Line2D
 import numpy as np
 import json
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from pathlib import Path
 from scipy import stats 
-
+import matplotlib as mpl
+import pandas as pds
 #the score function for the gradient descent
+#constants for the figures
+fontsize_legend = 10
+fontsize_axes = 14
+fontsize_ticks = 10
+linewidth_all = 3
+markersize_all = 6
+
+width_whole = 3.325 * 2
+height_whole = 2.5
+#######
 def model(t,E, A,w,p,l):
     return E + A * np.exp(-l*t) * np.cos(w*t + p)
 
@@ -27,7 +41,7 @@ def average(list):
 def average_convert (list,N ,S):
     """
     Filters the velocity to get rid of noise, with N the number of points to average over( 5< N <20 overall). Also converts it in m/s, with S the size of a  in m
-    Returns a list of the same size , of course N<< len(list)
+    Returns a list of the same size , of course N< len(list) ( can get quite high (0.2len) if we really want to smooth)
     """
     
     n = len(list)
@@ -50,6 +64,8 @@ class WaveTrackingAnalyzer:
     """
     Analyze and visualize wave tracking data from JSON output.
     """
+    #On every videos so far the scale was 0.0002 m/px
+
     
     def __init__(self, json_path):
         """
@@ -106,14 +122,97 @@ class WaveTrackingAnalyzer:
         # style
         import seaborn as sns
         sns.set_style("whitegrid")
-        sns.set_context("paper", font_scale=1.3)
+        sns.set_context("paper")
     
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
         
         
+        df= pds.read_csv("data/data_samples.csv")
+    
+        colonnes_voulues = ["stretch weft (nominal)", "stretch warp (nominal)", "wave speed (m/s)", "Kept","Category "]
+        df= df[colonnes_voulues]
+        df["stretch weft (nominal)"] = pds.to_numeric(df["stretch weft (nominal)"], errors="coerce")
+        df["stretch warp (nominal)"] = pds.to_numeric(df["stretch warp (nominal)"], errors="coerce")
+        df["wave speed (m/s)"]       = pds.to_numeric(df["wave speed (m/s)"], errors="coerce")
+        df = df.dropna()
+
+        dfs =df[df["Kept"]==0.5]
+        dfl =df[df["Kept"]==1.0]
+        fig,axes= plt.subplots(1,3, figsize=(8, height_whole))
+        
+        #continuous label
+        norm = mpl.colors.Normalize(
+        vmin=dfs["wave speed (m/s)"].min(),
+        vmax=dfs["wave speed (m/s)"].max())
+        sm = mpl.cm.ScalarMappable(cmap="viridis", norm=norm)
+        sm.set_array([])
+
+        
+        ax0=axes[1]
+        sns.scatterplot(data=df, x="stretch weft (nominal)", y="stretch warp (nominal)", hue="wave speed (m/s)",legend=False,style="Category ", markers=["o","s", "^"], palette="viridis",ax=ax0) 
+        ax0.set_xlabel("Stretch weft", fontsize=14)
+        ax0.set_ylabel("Stretch warp", fontsize=14)
+        ax0.set_ylim(2,3.6)
+        ax0.set_xlim(1,2)
+        ax0.set_title("Small columns", fontsize=14, fontweight="bold", pad=5,loc="left")
+        ax0.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        #ax0.set_title("Wave speed depending on warp and weft stretch (aggregated)")  
+        
+        
+        ax1=axes[2]
+        sns.scatterplot(data=dfl, x="stretch weft (nominal)", y="stretch warp (nominal)",legend=False, hue="wave speed (m/s)",style="Category ", markers=["o","s", "^"], palette="viridis",ax=ax1)
+
+        ax1.set_xlabel("Stretch weft", fontsize=14)
+        ax1.set_ylabel(" ", fontsize=14, fontweight="bold")
+        ax1.set_ylim(2,3.6)
+        ax1.set_xlim(1,2)
+        ax1.set_title("Large columns", fontsize=14, fontweight="bold", pad=5, loc="left")
+        ax1.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        cbar = plt.colorbar(sm, ax=ax1)
+        cbar.set_label("Wave speed (m/s)", fontsize=10)
+
+        """
+        
+        #the legend for the categories
+        categories = dfl["Category "].unique()
+        markers = ["o", "s", "^", "D"]
+        def Caté(cat):
+            if cat == 1:
+                return " A"
+            elif cat ==2:
+                return " B"
+            elif cat == 3:
+                return "C"
+            else:
+                return cat
+            
+        handles = [
+        Line2D(
+        [0], [0],
+        marker=markers[i],
+        markerfacecolor="none",   
+        markeredgecolor="black",  
+        color="black",
+        linestyle="None",
+        markersize=8,
+        label=Caté(cat)
+        )
+        for i, cat in enumerate(categories)]
+
+        ax1.legend(
+        handles=handles,
+        title="Category",
+        fontsize=10,
+        title_fontsize=10,
+        
+        frameon=True,
+        loc="best")
+        #ax1.set_title("Wave speed depending on warp and weft stretch (large columns)")
+
+
         
         # tracked string
-        ax2 = axes[1]
+        
+        
         
         center= distances_string[0]
         print(len(times_string[1:]))
@@ -137,19 +236,23 @@ class WaveTrackingAnalyzer:
         l2   = f"{l_opt:.2g}"
         E2   = f"{E_opt:.2g}"
         print(f"Fitted parameters: A={A2}, w={w2}, p={p2}, l={l2}, E={E2}")
-        fitted_distances = model(np.array(times_string), *popt)
-        ax2.plot(times_string, fitted_distances, '-', color='blue', linewidth=1.5, markersize=0, label = "fit" )
+        tight_times= np.linspace(min(times_string), max(times_string), 1000)
+        fitted_distances = model(np.array(tight_times), *popt)
         
-        ax2.plot(times_string, distances_string, '-', color='#ff7f0e', linewidth=1.5, markersize=0, label = "tracked string" )
-        ax2.set_xlabel('Time [s]', fontsize=14)
-        ax2.set_ylabel('Position from center (pixels)', fontsize=14)
+        ax2.plot(tight_times, fitted_distances, '-', color='blue', linewidth=1.5, markersize=0, label = "model" )
+        
+        ax2.plot(times_string, distances_string,marker= 'o',  color='#ff7f0e', linewidth=0, markersize=2, label = "tracked string" )
+        ax2.set_xlabel('Time (s)', fontsize=14)
+        ax2.set_ylabel('Δx_string (px)', fontsize=14)
         ax2.legend()
+        
+        """
         """
         #that's the instantaneous velocity plot, very noisy
         correct_list=average_convert(velocities_px_per_s,50,0.0002)
         
 
-        # we determined when the wave stopped by first averaging to get rid of the noise, and now we reaverage on the relevant measurements
+        # we returned when the wave stopped by first averaging to get rid of the noise, and now we reaverage on the relevant measurements
         # If I had taken truncated list, I would have taken average measures containing irrelevant values
         if len(velocities_px_per_s) > 0:
             ax2.plot(times_velocity,correct_list, '-', color='#2ca02c', linewidth=1.5, alpha=0.7)
@@ -163,26 +266,36 @@ class WaveTrackingAnalyzer:
         ax2.spines['right'].set_visible(False)
         ax2.legend(frameon=False, fontsize=10)
         """
-        """
+        
         
         # 1. distance vs time (wave front propagation)
-        """
+        
+        
+        
+        ax2 = axes[0]
+        
         slope, intercept, r_value, p_value, std_err = stats.linregress(times, distances)
         L=[]
         for i in range(len(times)):
-            L.append(intercept+slope*times[i])
-        ax1 = axes[0]
-        ax1.plot(times,L, '-', color='blue', linewidth=1.5, markersize=0, label = "mean: "+str(slope*0.0002)[:5]+"m/s" )
+            L.append((intercept+slope*times[i])*0.2)
+        for i in range(len(distances)):
+            distances[i]= distances[i]*0.2 # conversion en mm
         
-        ax1.plot(times, distances, '-', color='#d62728', linewidth=1.5, markersize=0)
-        ax1.set_xlabel('Time [s]', fontsize=11)
-        ax1.set_ylabel('Distance from origin (pixels)', fontsize=11)
-        ax1.set_title('Wave front propagation', fontsize=12, fontweight='bold', pad=10)
-        ax1.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
-        ax1.spines['top'].set_visible(False)
-        ax1.spines['right'].set_visible(False)
-        ax1.legend()
+        print(f"Mean wave velocity: {slope*0.0002} m/s")
+        ax2.plot(times,L, '-', color='blue', linewidth=1.5, markersize=0, alpha=0.8, label='Linear fit' )
+        ax2.legend(fontsize=10)
+        ax2.plot(times, distances,marker='o', color='#ff7f0e', linewidth=0, markersize=1.5, alpha= 0.6)
+        ax2.set_xlabel('Time [s]', fontsize=14)
+        ax2.set_ylabel('Distance (mm)', fontsize=14)
+        #ax2.set_title('Wave front propagation', fontsize=12, fontweight='bold', pad=10)
+        ax2.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+        ax2.spines['top'].set_visible(False)
+        ax2.spines['right'].set_visible(False)
+        ax2.legend()
+        
+        
         plt.tight_layout()
+        plt.show()
 
         
         

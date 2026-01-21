@@ -207,7 +207,7 @@ def get_rightest_edge(shape): # gets the wavefront, we define as the rightest po
         if pt[0]>max_x:
             max_x=pt[0]
             rightest_pt=pt
-    return rightest_pt # we got the wavefront point
+    return rightest_pt, shape # we got the wavefront point
 
 #finally the function iterating the search for the wave point
 def get_wave_pt(gray,threshold, st_pt, L):
@@ -215,8 +215,10 @@ def get_wave_pt(gray,threshold, st_pt, L):
     shape =get_last_big_shape(Image, st_pt,L)
     if shape is None:
         return None
-    wave_pt=get_rightest_edge(shape)
-    return wave_pt
+    wave_pt,shape=get_rightest_edge(shape)
+    return wave_pt, shape
+
+
 
 
 ### Functions to try to track the released strings
@@ -252,6 +254,7 @@ def get_centers ( st_i, S,l): #S number of springs in sub black line starting at
     #l is the length of the subline starting at i
     subcenters=[]
     a = l//S
+    
     i = st_i
     for j in range( S):
         subcenters.append(int(i+a/2+a*j))
@@ -395,12 +398,20 @@ class WavePointTracker :
         self.search_heigth = 5
         self.triangle_search = False # determines whether the search is conducted in a triangular region in front of the last wavefront or not
         self.R_line= 20  # Radius of the line on which we search for the starting points of the right shapes
-        self.threshold = 110 # threshold for binarization, the right value depends on the video, between 100 and 150 is the usual range
+        self.threshold = 170 # threshold for binarization, the right value depends on the video, between 100 and 150 is the usual range
         self.white_shapes= [] # The list of white shapes' centers already detected'
         self.average_shape_per_search=5 # number of shapes we have to  look at in white_shapes to be sure we're not adding a shape that's already in it after an iteration
-        self.wave_height = 6 # wave half-height, used in the detection of each loose string. Can be had with a simple print for each viedo in f° get_height. I usually choose a little lower half the heights, to be sure not to detect other rows
+        
+        
+
+        # mouse state
         self.mouse_x = 0
         self.mouse_y = 0
+
+        # video properties
+        self.wave_height= 6
+        
+        
 
     
     def mouse_callback(self, event, x, y, flags, param):
@@ -456,13 +467,13 @@ class WavePointTracker :
         
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        wavefront= get_wave_pt(gray, self.threshold, (center_x, center_y),self.R_line)
+        wavefront,shape= get_wave_pt(gray, self.threshold, (center_x, center_y),self.R_line)
         
         if wavefront is not None:
             
-            return wavefront
+            return wavefront,shape
         else:
-            return center_x, center_y
+            return center_x, center_y, shape
         
         
     def track_wave_front(self, frame) :
@@ -479,28 +490,27 @@ class WavePointTracker :
         if last_tracked_frame is None:
             return None
         last_x, last_y = self.wave_points[last_tracked_frame]
-
-        x_new, y_new = self.find_next_point(frame, last_x, last_y,  self.search_width, self.search_heigth)
+        
+        pt , shape = self.find_next_point(frame, last_x, last_y,  self.search_width, self.search_heigth)
        
         
         
         
-        """
-        # second idea using the hypothesis that even when some are bundled, there exists a line parallel to the  central line that contains each string seaparately
-        line = get_pseudo_line((x_new,y_new),self.origin_point)
-        best_line= find_best_offset(line, Image)
-        print(count_black_shapes(best_line,Image))
-        # problem: i still don't have a purely growing sequence, this approach still seems too sensitive
-        for pt in best_line:
-            cv2.circle(Image, (pt[0],pt[1]),1, (0,255,255),1)
-           
-        cv2.imshow('binarized',Image)
-        """
+        
+        
+        
+        
+    
+
+
+        
+        
 
         
         """
         part of the code trying to detect the oscillations with the topology algorithm (unefficient so far)
         bis= frame.copy()
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         Image= binarize(gray,self.threshold)
         if  self.origin_point is not None:
@@ -523,7 +533,7 @@ class WavePointTracker :
                 
         #cv2.imshow('colo',bis)
         
-        return (x_new, y_new)
+        return pt , shape
 
     def get_next_string_point(self, frame):
         
@@ -555,7 +565,7 @@ class WavePointTracker :
         cv2.createTrackbar('Frame', 'Controls', 0, self.frame_count - 1, lambda x : None)
     
     
-    def vizualise(self, frame,st_tr):
+    def vizualise(self, frame,st_tr,shape ):
         """est
         Generate annotated visualization:
         - Green: origin point ;
@@ -576,7 +586,7 @@ class WavePointTracker :
         if self.current_frame_idx in self.wave_points : 
             wx, wy = self.wave_points[self.current_frame_idx]
             #cv2.circle(display, (wx, wy), 6, (0, 0, 255), -1)
-            cv2.line(display, (wx, 0), (wx, self.height), (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.line(display, (wx,0), (wx, self.height), (0,0,255), 1, cv2.LINE_AA)
 
             # search region visualization
             if self.tracking_enabled :
@@ -587,12 +597,20 @@ class WavePointTracker :
 
         # wave trajectory 
         sorted_frames = sorted([f for f in self.wave_points.keys() if f <= self.current_frame_idx])
+        
         if len(sorted_frames) > 1 :
             for i in range (len(sorted_frames) - 1):
                 f1, f2 = sorted_frames[i], sorted_frames[i+1]
                 p1 = self.wave_points[f1]
                 p2 = self.wave_points[f2]
                 cv2.line(display, p1, p2, (0,0,255), 1, cv2.LINE_AA)
+        """
+        # If we only want the wavefront
+        if len(sorted_frames)>1:
+            last_frame = sorted_frames[-1]
+            p_last = self.wave_points[last_frame]
+            cv2.circle(display, p_last, 2, (0,0,255), -1)
+        """
         # the tracked string in yellow
         if len(self.string_points)>0:
             
@@ -606,7 +624,8 @@ class WavePointTracker :
         info = f"Frame {self.current_frame_idx}/{self.frame_count-1}"
         cv2.putText(display, info, (10,25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
-       
+       #vizualisation of the last big shape detected
+        
         return display, st_tr
 
     def run(self):
@@ -629,7 +648,6 @@ class WavePointTracker :
         print("  q        : Quit")
         print("  a        : Start autotracking of the strings")
         print()
-
         while True : 
             self.current_frame_idx = cv2.getTrackbarPos('Frame', 'Controls')
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_idx)
@@ -638,12 +656,13 @@ class WavePointTracker :
             if not ret :
                 print(f'Frame {self.current_frame_idx} cannot be read')
                 break
-            
+            shape= None
             # Auto-track if enabled and frame not annotated
             if self.tracking_enabled and self.current_frame_idx not in self.wave_points :
-                new_point = self.track_wave_front(frame)
-                if new_point is not None:  
-                        self.wave_points[self.current_frame_idx] = new_point
+                A = self.track_wave_front(frame)
+                if A is not None:  
+                        self.wave_points[self.current_frame_idx] = A[0]
+                        shape= A[1]
             if self.string_tracking_enabled and self.string_points[-1][0]!= self.current_frame_idx: # we assume the last frame had a string point
                 new_point=self.get_next_string_point(frame)
                 if new_point is not None:
@@ -654,12 +673,13 @@ class WavePointTracker :
 
             st_tr = cv2.cvtColor(resized, cv2.COLOR_GRAY2RGB)
             
-            display, st_tr = self.vizualise(frame,st_tr)
+            display, st_tr = self.vizualise(frame,st_tr,shape)
+            
             cv2.imshow('String tracker',st_tr)
             cv2.imshow('Wave tracker', display)
             
 
-            key = cv2.waitKey(30) 
+            key = cv2.waitKey(30000) 
 
             if key == ord('q'):
                 break
@@ -747,7 +767,7 @@ class WavePointTracker :
 
 if __name__ == "__main__":
     
-    video_path = "data/frame_v7.avi"
+    video_path = "data/frame_v5.avi"
     tracker = WavePointTracker(video_path)
     tracker.run()
     
