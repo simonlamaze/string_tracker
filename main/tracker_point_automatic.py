@@ -398,7 +398,7 @@ class WavePointTracker :
         self.search_heigth = 5
         self.triangle_search = False # determines whether the search is conducted in a triangular region in front of the last wavefront or not
         self.R_line= 20  # Radius of the line on which we search for the starting points of the right shapes
-        self.threshold = 170 # threshold for binarization, the right value depends on the video, between 100 and 150 is the usual range
+        self.threshold = 130 # threshold for binarization, the right value depends on the video, between 100 and 150 is the usual range
         self.white_shapes= [] # The list of white shapes' centers already detected'
         self.average_shape_per_search=5 # number of shapes we have to  look at in white_shapes to be sure we're not adding a shape that's already in it after an iteration
         
@@ -624,7 +624,7 @@ class WavePointTracker :
         info = f"Frame {self.current_frame_idx}/{self.frame_count-1}"
         cv2.putText(display, info, (10,25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
-       #vizualisation of the last big shape detected
+      
         
         return display, st_tr
 
@@ -679,7 +679,7 @@ class WavePointTracker :
             cv2.imshow('Wave tracker', display)
             
 
-            key = cv2.waitKey(30000) 
+            key = cv2.waitKey(30) 
 
             if key == ord('q'):
                 break
@@ -767,7 +767,7 @@ class WavePointTracker :
 
 if __name__ == "__main__":
     
-    video_path = "data/frame_v5.avi"
+    video_path = "data/frame_v17.avi"
     tracker = WavePointTracker(video_path)
     tracker.run()
     

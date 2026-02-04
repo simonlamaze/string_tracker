@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import matplotlib as mpl
 import numpy as np
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype']  = 42
+mpl.rcParams['font.family'] = 'DejaVu Sans'
+mpl.rcParams['text.usetex'] = False
 def main():
     """
     df = pd.read_csv("data/oscillations.csv")
@@ -58,16 +62,16 @@ def main():
     #script to plot different graphs for each weft stretch
     wfss = {val: dfs[dfs["stretch weft (nominal)"] == val] for val in dfs["stretch weft (nominal)"].unique()}
     wfsl = {val: dfl[dfl["stretch weft (nominal)"] == val] for val in dfl["stretch weft (nominal)"].unique()}
-    wfss_f = {k: v for k, v in wfss.items() if k > 1.7}
-    wfsl_f = {k: v for k, v in wfsl.items() if k > 1.7}
+    wfss_f = {k: v for k, v in wfss.items() if   k==1.98 }
+    wfsl_f = {k: v for k, v in wfsl.items() if   k==1.98 }
     l= len (wfss_f)
 
     
-    fig, axes = plt.subplots(1, l, figsize=(5.5, 3))
+    fig, axes = plt.subplots(1, l, figsize=(3, 3))
 
-    if len(wfss) == 1:
-        axes = [axes]  # Normalise si un seul plot
-    
+    if len(wfss_f) == 1:
+        axes = [axes]  
+    print(axes)
     for ax, (val, sdfs) in zip(axes, wfss_f.items()):
             
             sns.lineplot(data=sdfs, x="stretch warp (nominal)", y="wave speed (m/s)", color="blue", 
@@ -82,16 +86,17 @@ def main():
                          err_style="bars",
                          y="wave speed (m/s)", color="orange", ax=ax, label="Large cols", estimator="mean",marker="o",linestyle="")
             #sns.scatterplot(data=sdfl, x="stretch warp (nominal)", y="wave speed (m/s)", color="orange", ax=ax, label="wide cols")
-            ax.set_title("Weft stretch =" + str(val), fontsize=10, fontweight="bold")
+            ax.set_title("Weft stretch =" + str(val), fontsize=7, fontweight="bold",loc="left")
             ax.set_ylim(0,30)
-            ax.set_xlabel("Warp stretch ", fontsize=14)
-            ax.set_ylabel(" ", fontsize=14)
+            ax.set_xlabel("Warp stretch ", fontsize=7)
+            ax.set_ylabel(" ", fontsize=7)
             
-            ax.grid()
-            ax.legend(loc="lower right")
-    axes[0].set_ylabel("Wave speed (m/s)", fontsize=14)
+            
+            ax.legend(loc="lower right", fontsize=7)
+    axes[0].set_ylabel("Wave speed (m/s)", fontsize=7)
     plt.tight_layout()
     plt.subplots_adjust(right=0.9)
+    plt.savefig("outputs/wave_speed_vs_stretches.pdf", dpi=300, format='pdf')
     plt.show()
     
     
